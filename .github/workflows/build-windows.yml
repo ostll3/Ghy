@@ -1,0 +1,63 @@
+
+name: Build Windows Qt application
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'RapidResponseTrainingDB_Cpp_Qt_Source_With_Cloud_Build.zip'
+      - '.github/workflows/build-windows.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2 and Qt 6 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            unzip
+            zip
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-minizip
+
+      - name: Extract project archive
+        run: |
+          unzip -o RapidResponseTrainingDB_Cpp_Qt_Source_With_Cloud_Build.zip -d extracted
+          test -f extracted/qt_cpp_native/CMakeLists.txt
+
+      - name: Configure
+        run: cmake -S extracted/qt_cpp_native -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$MINGW_PREFIX"
+
+      - name: Compile
+        run: cmake --build build --parallel
+
+      - name: Package executable and Qt runtime
+        run: |
+          mkdir -p package
+          cp build/RapidResponseTrainingDB.exe package/
+          cp -r "$MINGW_PREFIX/bin" package/qt-runtime
+          cp -r "$MINGW_PREFIX/share/qt6/plugins" package/qt-plugins 2>/dev/null || true
+          printf '@echo off\nset PATH=%%~dp0qt-runtime;%%PATH%%\nset QT_PLUGIN_PATH=%%~dp0qt-plugins\nstart "" "%%~dp0RapidResponseTrainingDB.exe"\n' > package/تشغيل_البرنامج.bat
+          cd package
+          zip -qr ../RapidResponseTrainingDB_Windows.zip .
+
+      - name: Upload Windows build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RapidResponseTrainingDB-Windows
+          path: |
+            build/RapidResponseTrainingDB.exe
+            RapidResponseTrainingDB_Windows.zip
+          if-no-files-found: error
